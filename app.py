@@ -10,17 +10,24 @@ st.set_page_config(page_title="居家牙醫申請優化系統", page_icon="🦷"
 user = require_login()
 
 st.title("🦷 居家牙醫申請優化系統")
-st.markdown(f"歡迎，**{user}**。請從左側選單選擇功能：")
+st.markdown(f"歡迎，**{user}** 👋")
 
+st.subheader("📋 開始使用")
 st.markdown(
     """
-    - **新增申請** — 填寫個案資料、上傳口腔照片，生成可寄出的 PDF
-    - **案件清單** — 查看／編輯／重印過往案件
-
-    ---
-    📌 PDF 生成後請手動寄到 `dental@cda.org.tw`（系統不會自動寄）。
+    1. 左側點 **新增申請** → 填表 → 上傳口腔照片
+    2. 點「📄 產生 PDF 並標記為已送出」→ 下載 PDF
+    3. **手動寄到 `dental@cda.org.tw`**（系統不會自動寄信）
+    4. 寄完回 app 把案件狀態改成對應的（補件中／已通過等）
     """
 )
+
+st.divider()
+st.warning(
+    "🔒 **資料隱私提醒**：本系統存身分證／健康狀況等敏感資料。"
+    "用完請**登出**、共用電腦請**關閉分頁**、不要在公共電腦使用。"
+)
+st.caption("🆘 卡住請聯絡 Hanna")
 
 with st.sidebar:
     st.divider()
