@@ -67,7 +67,6 @@ def upsert_application(
     uploads: list[dict] | None = None,
 ) -> str:
     row = {
-        "created_by": user,
         "case_name": case_name,
         "payload": payload,
         "status": status,
@@ -77,8 +76,11 @@ def upsert_application(
 
     table = _client().table("applications")
     if app_id:
+        # 更新既有案件時不動 created_by，保留原始建立者
         table.update(row).eq("id", app_id).execute()
         return app_id
+    # 新建才寫 created_by
+    row["created_by"] = user
     new_id = str(uuid.uuid4())
     row["id"] = new_id
     table.insert(row).execute()
