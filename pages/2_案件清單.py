@@ -20,7 +20,17 @@ with c2:
         format_func=storage.status_label,
     )
 
-rows = storage.list_applications(user, mine_only=mine_only)
+try:
+    rows = storage.list_applications(user, mine_only=mine_only)
+except Exception as e:
+    st.error(f"讀取案件清單失敗：{type(e).__name__}")
+    # 把 PostgREST 結構化錯誤拆出來顯示
+    for attr in ("message", "code", "details", "hint"):
+        v = getattr(e, attr, None)
+        if v:
+            st.code(f"{attr}: {v}")
+    st.caption("如果看到 invalid API key／JWT 之類訊息，多半是 Streamlit Cloud Secrets 沒同步成最新的 service_key。")
+    st.stop()
 if status_filter:
     rows = [r for r in rows if r.get("status") in status_filter]
 
