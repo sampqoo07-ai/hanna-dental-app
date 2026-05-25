@@ -123,7 +123,20 @@ with st.expander("三、個案基本資料", expanded=True):
         value=payload.get("birth_date", ""),
         help="請輸入民國 7 碼格式",
     )
-    age = st.number_input("年齡", min_value=0, max_value=120, value=int(payload.get("age", 0)))
+    _birth = validators.parse_roc_date(birth_date)
+    _calc_age = validators.calc_age(_birth) if _birth else None
+    if _birth:
+        st.caption(
+            f"換算：西元 {_birth.strftime('%Y-%m-%d')}　"
+            f"計算年齡 **{_calc_age} 歲**（依今日日期）"
+        )
+    _age_default = _calc_age if _calc_age is not None else int(payload.get("age", 0) or 0)
+    # key 綁 birth_date：生日一改就重置成新算的年齡；生日不變時手動覆寫會保留
+    age = st.number_input(
+        "年齡（依出生日自動帶入，可手動調整）",
+        min_value=0, max_value=120, value=_age_default,
+        key=f"age_input_{birth_date}",
+    )
     address = st.text_area("住所地址", value=payload.get("address", ""))
     disability = st.text_input(
         "障別／等級（請寫等級，如「中度」）",

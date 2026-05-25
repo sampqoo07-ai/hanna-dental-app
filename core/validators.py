@@ -1,5 +1,7 @@
 """欄位驗證。每個函式回傳 (ok, 錯誤訊息)。"""
+from __future__ import annotations
 import re
+from datetime import date
 
 _ID_RE = re.compile(r"^[A-Z][12]\d{8}$")
 _PHONE_RE = re.compile(r"^(0\d{1,3}-?\d{6,8}|09\d{2}-?\d{3}-?\d{3})$")
@@ -47,3 +49,20 @@ def validate_required(value, label: str) -> tuple[bool, str]:
     if value is None or (isinstance(value, str) and not value.strip()):
         return False, f"{label}必填"
     return True, ""
+
+
+def parse_roc_date(s: str) -> date | None:
+    """民國 YYYMMDD 7 碼字串 → datetime.date；格式錯回 None。"""
+    s = (s or "").strip()
+    if not _ROC_DATE_RE.match(s):
+        return None
+    try:
+        return date(int(s[:3]) + 1911, int(s[3:5]), int(s[5:]))
+    except ValueError:
+        return None
+
+
+def calc_age(birth: date, today: date | None = None) -> int:
+    """西元生日 → 年齡（足歲）。"""
+    today = today or date.today()
+    return today.year - birth.year - ((today.month, today.day) < (birth.month, birth.day))
