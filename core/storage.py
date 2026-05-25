@@ -87,12 +87,35 @@ def upsert_application(
     return new_id
 
 
+_MIME_BY_EXT = {
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "png": "image/png",
+    "pdf": "application/pdf",
+    "heic": "image/heic",
+}
+
+
 def upload_file(app_id: str, kind: str, filename: str, data: bytes) -> dict:
-    """kind: mouth_photo / id_doc / vpn_doc. 回傳 {kind, path, filename}。"""
+    """kind: mouth_photo / id_doc / vpn_doc. 回傳 {kind, path, filename}。
+
+    失敗會把 Supabase 回的 message/statusCode 包進 RuntimeError raise 出來，
+    讓上層能顯示給使用者看（Streamlit Cloud 預設會把未處理錯誤 redact 掉）。
+    """
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "jpg"
+    mime = _MIME_BY_EXT.get(ext, "application/octet-stream")
     path = f"{app_id}/{kind}/{uuid.uuid4().hex}_{filename}"
-    _client().storage.from_(_bucket()).upload(
-        path, data, {"content-type": "image/jpeg", "upsert": "true"}
-    )
+    try:
+        _client().storage.from_(_bucket()).upload(
+            path, data, {"content-type": mime, "upsert": "true"}
+        )
+    except Exception as e:
+        msg = getattr(e, "message", None) or str(e)
+        status = getattr(e, "code", None) or getattr(e, "status_code", None) or "?"
+        size_mb = len(data) / 1024 / 1024
+        raise RuntimeError(
+            f"上傳「{filename}」失敗（{size_mb:.1f} MB, {mime}, status={status}）：{msg}"
+        ) from e
     return {"kind": kind, "path": path, "filename": filename}
 
 

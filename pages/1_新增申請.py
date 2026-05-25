@@ -10,6 +10,12 @@ from core import storage, validators, pdf_builder
 st.set_page_config(page_title="新增申請", page_icon="📝", layout="wide")
 user = require_login()
 
+
+@st.cache_data(ttl=600, show_spinner=False)
+def _download_cached(path: str) -> bytes:
+    """同個 path 不會重複從 storage 抓，避免每次 rerun 都重抓。"""
+    return storage.download_file(path)
+
 # --- 載入既有案件（編輯模式）---
 # URL ?id=... 優先；沒有就退回 session_state（rerun 後仍可保住）
 app_id = st.query_params.get("id") or st.session_state.get("current_case_id")
@@ -176,7 +182,37 @@ with st.expander("六、附件上傳", expanded=True):
         f"上傳{doc_label}", accept_multiple_files=True, type=["jpg", "png", "jpeg", "pdf"], key="docs"
     )
     if uploads:
-        st.caption(f"已上傳 {len(uploads)} 個附件（編輯模式下會保留，新檔會追加）")
+        st.markdown(f"**已成功上傳到伺服器的附件（{len(uploads)} 個）**")
+        st.caption("這些是已存進雲端 Storage 的檔案，新檔會在這次儲存後追加")
+        _mouth_paths = [u for u in uploads if u.get("kind") == "mouth_photo"]
+        _doc_paths = [u for u in uploads if u.get("kind") in ("id_doc", "vpn_doc")]
+        if _mouth_paths:
+            st.caption("口腔照片")
+            _cols = st.columns(min(4, len(_mouth_paths)))
+            for i, u in enumerate(_mouth_paths):
+                with _cols[i % len(_cols)]:
+                    try:
+                        st.image(
+                            _download_cached(u["path"]),
+                            caption=u["filename"],
+                            use_container_width=True,
+                        )
+                    except Exception as ex:
+                        st.error(f"無法顯示 {u['filename']}：{ex}")
+        if _doc_paths:
+            st.caption("身份／VPN 文件")
+            for u in _doc_paths:
+                if u["filename"].lower().endswith(".pdf"):
+                    st.markdown(f"📄 {u['filename']}")
+                else:
+                    try:
+                        st.image(
+                            _download_cached(u["path"]),
+                            caption=u["filename"],
+                            width=240,
+                        )
+                    except Exception as ex:
+                        st.error(f"無法顯示 {u['filename']}：{ex}")
 
 # --- 收集 payload（key 直接對齊 pdf_builder.FIELD_MAP）---
 payload_out = {
@@ -221,14 +257,22 @@ with c1:
         case_id = storage.upsert_application(
             app_id, user, name or "(未命名)", payload_out, status="draft"
         )
-        new_uploads = _save_uploads(case_id)
+        try:
+            new_uploads = _save_uploads(case_id)
+        except Exception as e:
+            st.error("上傳附件失敗，文字資料已存草稿")
+            st.code(str(e))
+            st.stop()
         if new_uploads:
             storage.upsert_application(
                 case_id, user, name or "(未命名)", payload_out,
                 status="draft", uploads=uploads + new_uploads,
             )
         st.session_state["current_case_id"] = case_id
-        st.session_state["_saved_msg"] = f"草稿已儲存（{case_id[:8]}…）"
+        st.session_state["_saved_msg"] = (
+            f"草稿已儲存（{case_id[:8]}…）"
+            + (f"，新增 {len(new_uploads)} 個附件" if new_uploads else "")
+        )
         st.query_params["id"] = case_id
         st.rerun()
 
@@ -252,36 +296,59 @@ with c2:
             for e in errors:
                 st.error(e)
         else:
+            # Step 1: 先存草稿（保留現有狀態，不要先標 submitted）
+            current_status = (existing or {}).get("status", "draft")
             case_id = storage.upsert_application(
-                app_id, user, name, payload_out, status="submitted"
+                app_id, user, name, payload_out, status=current_status
             )
-            new_uploads = _save_uploads(case_id)
+            st.session_state["current_case_id"] = case_id
+            st.query_params["id"] = case_id
+
+            # Step 2: 上傳附件（失敗就停、不動 status）
+            try:
+                new_uploads = _save_uploads(case_id)
+            except Exception as e:
+                st.error("上傳附件失敗，案件未送出，請修正後重試")
+                st.code(str(e))
+                st.stop()
             all_uploads = uploads + new_uploads
+
+            # Step 3: 寫回 uploads（status 還是 draft / 原狀態）
+            storage.upsert_application(
+                case_id, user, name, payload_out,
+                status=current_status, uploads=all_uploads,
+            )
+
+            # Step 4: 生 PDF
+            try:
+                photos = [_download_cached(u["path"]) for u in all_uploads
+                          if u["kind"] == "mouth_photo"]
+                doc_files = [
+                    (u["filename"], _download_cached(u["path"]), u["kind"])
+                    for u in all_uploads if u["kind"] in ("id_doc", "vpn_doc")
+                ]
+                pdf_bytes = pdf_builder.build_pdf(payload_out, photos, doc_files)
+            except NotImplementedError as e:
+                st.warning(f"⚠️ {e}")
+                st.info("附件已存到資料庫，等 PDF 範本就位後即可重印。")
+                st.stop()
+            except Exception as e:
+                st.error("生成 PDF 失敗，案件未送出")
+                st.exception(e)
+                st.stop()
+
+            # Step 5: 全部成功，才標記為 submitted
             storage.upsert_application(
                 case_id, user, name, payload_out,
                 status="submitted", uploads=all_uploads,
             )
-            try:
-                photos = [storage.download_file(u["path"]) for u in all_uploads
-                          if u["kind"] == "mouth_photo"]
-                doc_files = [
-                    (u["filename"], storage.download_file(u["path"]), u["kind"])
-                    for u in all_uploads if u["kind"] in ("id_doc", "vpn_doc")
-                ]
-                pdf_bytes = pdf_builder.build_pdf(payload_out, photos, doc_files)
-                # 存到 session_state 讓 rerun 後下載按鈕還在
-                st.session_state["_last_pdf"] = {
-                    "bytes": pdf_bytes,
-                    "name": name,
-                    "case_id": case_id,
-                }
-                st.session_state["current_case_id"] = case_id
-                st.session_state["_saved_msg"] = "已標記為「已送出」。請手動寄到 dental@cda.org.tw"
-                st.query_params["id"] = case_id
-                st.rerun()
-            except NotImplementedError as e:
-                st.warning(f"⚠️ {e}")
-                st.info("案件已存到資料庫（狀態：已送出），等 PDF 範本就位後即可重印。")
+            st.session_state["_last_pdf"] = {
+                "bytes": pdf_bytes,
+                "name": name,
+                "case_id": case_id,
+            }
+            st.session_state["_saved_msg"] = "已標記為「已送出」，PDF 已生成"
+            st.rerun()
 
 with c3:
     if existing and st.button("🗑️ 刪除此案件", use_container_width=True):
