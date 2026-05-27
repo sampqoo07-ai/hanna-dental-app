@@ -5,7 +5,7 @@
 """
 import streamlit as st
 from core.auth import require_login
-from core import storage, validators, pdf_builder
+from core import storage, validators, pdf_builder, mailer
 
 st.set_page_config(page_title="新增申請", page_icon="📝", layout="wide")
 user = require_login()
@@ -73,16 +73,56 @@ _msg = st.session_state.pop("_saved_msg", None)
 if _msg:
     st.success(_msg)
 
-# 如果剛剛產生 PDF（屬於這個案件），顯示下載按鈕
+# 如果剛剛產生 PDF（屬於這個案件），顯示下載按鈕＋寄信按鈕
 _pdf = st.session_state.get("_last_pdf")
 if _pdf and _pdf.get("case_id") == app_id:
-    st.download_button(
-        "⬇️ 下載 PDF",
-        _pdf["bytes"],
-        file_name=f"居家牙醫申請_{_pdf['name']}.pdf",
-        mime="application/pdf",
-        use_container_width=True,
+    _dl_col, _mail_col = st.columns(2)
+    with _dl_col:
+        st.download_button(
+            "⬇️ 下載 PDF",
+            _pdf["bytes"],
+            file_name=f"居家牙醫申請_{_pdf['name']}.pdf",
+            mime="application/pdf",
+            use_container_width=True,
+        )
+    with _mail_col:
+        if st.button("✉️ 寄到公會", use_container_width=True):
+            st.session_state["_show_email_dialog"] = True
+            st.rerun()
+
+
+@st.dialog("寄信確認")
+def _confirm_email_dialog():
+    pdf = st.session_state.get("_last_pdf")
+    if not pdf:
+        st.error("找不到剛剛產生的 PDF，請重新產生。")
+        return
+    st.markdown(
+        f"要把 **{pdf['name']}** 的申請 PDF 寄到 "
+        f"`{mailer.RECIPIENT}` 嗎？"
     )
+    st.caption(f"主旨：{mailer.SUBJECT}")
+    st.caption("寄出前建議先點「下載 PDF」打開檢查內容無誤。")
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("✉️ 確認寄出", type="primary", use_container_width=True):
+            try:
+                mailer.send_application_pdf(pdf["name"], pdf["bytes"])
+                st.session_state["_saved_msg"] = (
+                    f"已寄出申請到 {mailer.RECIPIENT}（{pdf['name']}）"
+                )
+                st.rerun()
+            except Exception as e:
+                st.error(f"寄信失敗：{type(e).__name__}")
+                st.exception(e)
+    with c2:
+        if st.button("暫不寄信", use_container_width=True):
+            st.rerun()
+
+
+# 產生 PDF 後自動跳寄信視窗；點 ✉️ 按鈕也會走這條
+if st.session_state.pop("_show_email_dialog", False):
+    _confirm_email_dialog()
 
 # --- 表單 ---
 with st.expander("一、申請單位資訊", expanded=True):
@@ -361,6 +401,7 @@ with c2:
                 "case_id": case_id,
             }
             st.session_state["_saved_msg"] = "已標記為「已送出」，PDF 已生成"
+            st.session_state["_show_email_dialog"] = True
             st.rerun()
 
 with c3:
