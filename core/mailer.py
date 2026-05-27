@@ -14,16 +14,26 @@ RECIPIENT = "dental@cda.org.tw"
 SUBJECT = "好所宅診所居家牙醫申請"
 
 
+def active_recipient() -> str:
+    """實際會寄到的地址：secrets [smtp].test_recipient 有設就用那個，否則寄公會。"""
+    try:
+        override = st.secrets["smtp"].get("test_recipient")
+    except Exception:
+        override = None
+    return (override or "").strip() or RECIPIENT
+
+
 def send_application_pdf(case_name: str, pdf_bytes: bytes) -> None:
-    """寄一封 PDF 附件信給公會。失敗會 raise。"""
+    """寄一封 PDF 附件信給公會（或 test_recipient）。失敗會 raise。"""
     cfg = st.secrets["smtp"]
     sender = cfg["sender"]
     app_password = cfg["app_password"]
+    to_addr = active_recipient()
 
     msg = EmailMessage()
-    msg["Subject"] = SUBJECT
+    msg["Subject"] = SUBJECT + (" [TEST]" if to_addr != RECIPIENT else "")
     msg["From"] = sender
-    msg["To"] = RECIPIENT
+    msg["To"] = to_addr
     msg.set_content(
         f"您好，\n\n附件為居家牙醫醫療需求服務申請，個案：{case_name}。\n"
         "煩請審閱，感謝。\n\n好所宅診所 敬上"
@@ -38,3 +48,7 @@ def send_application_pdf(case_name: str, pdf_bytes: bytes) -> None:
     with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as s:
         s.login(sender, app_password)
         s.send_message(msg)
+
+
+def is_test_mode() -> bool:
+    return active_recipient() != RECIPIENT

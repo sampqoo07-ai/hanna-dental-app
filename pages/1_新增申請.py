@@ -97,11 +97,14 @@ def _confirm_email_dialog():
     if not pdf:
         st.error("找不到剛剛產生的 PDF，請重新產生。")
         return
+    _to = mailer.active_recipient()
+    if mailer.is_test_mode():
+        st.warning(f"🧪 測試模式：信會寄到 `{_to}`（不是公會）")
     st.markdown(
         f"要把 **{pdf['name']}** 的申請 PDF 寄到 "
-        f"`{mailer.RECIPIENT}` 嗎？"
+        f"`{_to}` 嗎？"
     )
-    st.caption(f"主旨：{mailer.SUBJECT}")
+    st.caption(f"主旨：{mailer.SUBJECT}" + (" [TEST]" if mailer.is_test_mode() else ""))
     st.caption("寄出前建議先點「下載 PDF」打開檢查內容無誤。")
     c1, c2 = st.columns(2)
     with c1:
@@ -109,7 +112,8 @@ def _confirm_email_dialog():
             try:
                 mailer.send_application_pdf(pdf["name"], pdf["bytes"])
                 st.session_state["_saved_msg"] = (
-                    f"已寄出申請到 {mailer.RECIPIENT}（{pdf['name']}）"
+                    f"已寄出申請到 {mailer.active_recipient()}（{pdf['name']}）"
+                    + ("　[測試模式]" if mailer.is_test_mode() else "")
                 )
                 st.rerun()
             except Exception as e:
