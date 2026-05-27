@@ -17,6 +17,7 @@ Supabase 端要先建好（用 SQL editor 跑一次）：
 """
 from __future__ import annotations
 from typing import Any
+import re
 import uuid
 import streamlit as st
 from supabase import create_client, Client
@@ -53,8 +54,17 @@ def list_applications(user: str, mine_only: bool = True) -> list[dict[str, Any]]
     return q.execute().data or []
 
 
+_UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
+
+
 def get_application(app_id: str) -> dict[str, Any] | None:
-    res = _client().table("applications").select("*").eq("id", app_id).execute()
+    """壞掉／非 UUID 格式的 id 直接回 None，避免 PostgREST 22P02 把整頁炸掉。"""
+    if not app_id or not _UUID_RE.match(app_id):
+        return None
+    try:
+        res = _client().table("applications").select("*").eq("id", app_id).execute()
+    except Exception:
+        return None
     return (res.data or [None])[0]
 
 
