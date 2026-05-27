@@ -111,9 +111,8 @@ if _pdf and _pdf.get("case_id") == app_id:
             st.rerun()
 
 
-@st.dialog("寄信確認", width="large")
+@st.dialog("寄信確認")
 def _confirm_email_dialog():
-    import base64
     pdf = st.session_state.get("_last_pdf")
     if not pdf:
         st.error("找不到剛剛產生的 PDF，請重新產生。")
@@ -127,20 +126,14 @@ def _confirm_email_dialog():
     )
     st.caption(f"主旨：{mailer.SUBJECT}" + (" [TEST]" if mailer.is_test_mode() else ""))
 
-    # 內嵌 PDF 預覽（桌機 Chrome/Safari OK；手機 Safari 看不到請按下載）
-    _b64 = base64.b64encode(pdf["bytes"]).decode()
-    st.components.v1.html(
-        f'<iframe src="data:application/pdf;base64,{_b64}" '
-        f'width="100%" height="520" style="border:1px solid #ddd;border-radius:6px;"></iframe>',
-        height=540,
-    )
     st.download_button(
-        "⬇️ 下載 PDF 檢查（手機看不到預覽請用這個）",
+        "📄 預覽 PDF",
         pdf["bytes"],
         file_name=f"居家牙醫申請_{pdf['name']}.pdf",
         mime="application/pdf",
         use_container_width=True,
         key="_dialog_download",
+        help="下載到裝置，用 PDF 閱讀器打開檢查",
     )
     st.caption(f"檔案大小：{len(pdf['bytes'])/1024:.0f} KB")
 
