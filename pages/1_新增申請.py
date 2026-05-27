@@ -5,7 +5,7 @@
 """
 import streamlit as st
 from core.auth import require_login
-from core import storage, validators, pdf_builder, mailer
+from core import storage, validators, pdf_builder, mailer, image_utils
 
 st.set_page_config(page_title="新增申請", page_icon="📝", layout="wide")
 user = require_login()
@@ -223,7 +223,11 @@ with st.expander("五、個案身心健康狀況"):
 with st.expander("六、附件上傳", expanded=True):
     st.subheader("口腔照片（建議 2-4 張）")
     new_mouth = st.file_uploader(
-        "上傳口腔照片", accept_multiple_files=True, type=["jpg", "png", "jpeg"], key="mouth"
+        "上傳口腔照片",
+        accept_multiple_files=True,
+        type=["jpg", "jpeg", "png", "heic", "heif"],
+        key="mouth",
+        help="iPhone HEIC 也可以，系統會自動轉成 JPEG 並縮到合適尺寸",
     )
     # 申請資格決定要附什麼證明
     doc_label = (
@@ -232,7 +236,10 @@ with st.expander("六、附件上傳", expanded=True):
     )
     st.subheader(doc_label)
     new_docs = st.file_uploader(
-        f"上傳{doc_label}", accept_multiple_files=True, type=["jpg", "png", "jpeg", "pdf"], key="docs"
+        f"上傳{doc_label}",
+        accept_multiple_files=True,
+        type=["jpg", "jpeg", "png", "heic", "heif", "pdf"],
+        key="docs",
     )
     if uploads:
         st.markdown(f"**已成功上傳到伺服器的附件（{len(uploads)} 個）**")
@@ -294,10 +301,16 @@ payload_out = {
 def _save_uploads(case_id: str) -> list[dict]:
     new_records = []
     for f in new_mouth or []:
-        new_records.append(storage.upload_file(case_id, "mouth_photo", f.name, f.getvalue()))
+        data, fname = image_utils.normalize_photo(f.getvalue(), f.name)
+        new_records.append(storage.upload_file(case_id, "mouth_photo", fname, data))
     for f in new_docs or []:
         kind = "vpn_doc" if qualification == 2 else "id_doc"
-        new_records.append(storage.upload_file(case_id, kind, f.name, f.getvalue()))
+        if f.name.lower().endswith(".pdf"):
+            # PDF 不動，直接上傳
+            new_records.append(storage.upload_file(case_id, kind, f.name, f.getvalue()))
+        else:
+            data, fname = image_utils.normalize_photo(f.getvalue(), f.name)
+            new_records.append(storage.upload_file(case_id, kind, fname, data))
     return new_records
 
 
