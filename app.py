@@ -3,7 +3,7 @@
 實際表單在 pages/1_新增申請.py、案件在 pages/2_案件清單.py。
 """
 import streamlit as st
-from core.auth import require_login
+from core.auth import require_login, logout
 
 st.set_page_config(page_title="居家牙醫申請優化系統", page_icon="🦷", layout="wide")
 
@@ -32,6 +32,5 @@ st.caption("🆘 卡住請聯絡 Hanna")
 with st.sidebar:
     st.divider()
     if st.button("登出"):
-        for k in ("authed", "user_name"):
-            st.session_state.pop(k, None)
+        logout()
         st.rerun()
