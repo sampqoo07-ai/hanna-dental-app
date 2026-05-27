@@ -64,6 +64,6 @@ choice = st.selectbox(
     format_func=lambda i: f"{df[df._id==i]['個案姓名'].iloc[0]}（{i[:8]}）",
 )
 if st.button("開啟", type="primary"):
-    st.session_state["current_case_id"] = choice
-    st.query_params["id"] = choice
+    # st.switch_page 不會帶 query_params，用 session 旗標傳遞，新增申請頁讀完即丟
+    st.session_state["_open_case_id"] = choice
     st.switch_page("pages/1_新增申請.py")

@@ -17,11 +17,14 @@ def _download_cached(path: str) -> bytes:
     return storage.download_file(path)
 
 # --- 載入既有案件（編輯模式）---
-# URL ?id=... 是唯一來源；從 sidebar 直接點「新增申請」會落到空白頁
-# （案件清單點某筆「開啟」會帶 ?id=；存檔/生 PDF 後也會把 id 寫回 URL）
+# 優先順序：URL ?id= → 案件清單剛剛交來的 _open_case_id → 否則空白新建
+# (st.switch_page 不會帶 query_params，所以清單頁用一次性 session 旗標傳遞)
 app_id = st.query_params.get("id")
+if not app_id:
+    app_id = st.session_state.pop("_open_case_id", None)
 if app_id:
-    st.session_state["current_case_id"] = app_id  # 給其他頁面參考
+    st.session_state["current_case_id"] = app_id
+    st.query_params["id"] = app_id  # 同步寫回 URL，後續 rerun 就靠它
 
 existing = storage.get_application(app_id) if app_id else None
 payload = (existing or {}).get("payload", {}) if existing else {}
