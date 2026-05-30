@@ -159,6 +159,49 @@ def _confirm_email_dialog():
 if st.session_state.pop("_show_email_dialog", False):
     _confirm_email_dialog()
 
+
+@st.dialog("確認刪除案件")
+def _confirm_delete_dialog():
+    case_id = st.session_state.get("_delete_case_id")
+    case_name = st.session_state.get("_delete_case_name") or "(未命名)"
+    if not case_id:
+        st.error("找不到要刪除的案件")
+        return
+    st.warning(
+        f"確定要刪除 **{case_name}**（{case_id[:8]}…）嗎？\n\n"
+        "這個動作會把案件文字資料、所有附件（口腔照片／文件）一起從雲端刪除，**無法復原**。"
+    )
+    confirmed = st.checkbox("我了解，確定要刪除", key="_delete_confirm_check")
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("取消", type="primary", use_container_width=True):
+            st.session_state.pop("_delete_case_id", None)
+            st.session_state.pop("_delete_case_name", None)
+            st.session_state.pop("_delete_confirm_check", None)
+            st.rerun()
+    with c2:
+        if st.button(
+            "🗑️ 確認刪除", use_container_width=True, disabled=not confirmed
+        ):
+            try:
+                storage.delete_application(case_id)
+            except Exception as e:
+                st.error(f"刪除失敗：{type(e).__name__}")
+                st.exception(e)
+                return
+            st.session_state.pop("current_case_id", None)
+            st.session_state.pop("_last_pdf", None)
+            st.session_state.pop("_delete_case_id", None)
+            st.session_state.pop("_delete_case_name", None)
+            st.session_state.pop("_delete_confirm_check", None)
+            st.session_state["_saved_msg"] = f"案件「{case_name}」已刪除"
+            st.query_params.clear()
+            st.rerun()
+
+
+if st.session_state.get("_delete_case_id"):
+    _confirm_delete_dialog()
+
 # --- 表單 ---
 with st.expander("一、申請單位資訊", expanded=True):
     CITIES = [
@@ -455,9 +498,7 @@ with c2:
 
 with c3:
     if existing and st.button("🗑️ 刪除此案件", use_container_width=True):
-        storage.delete_application(app_id)
-        st.session_state.pop("current_case_id", None)
-        st.session_state.pop("_last_pdf", None)
-        st.session_state["_saved_msg"] = "案件已刪除"
-        st.query_params.clear()
+        st.session_state["_delete_case_id"] = app_id
+        st.session_state["_delete_case_name"] = existing.get("case_name") or name or "(未命名)"
+        st.session_state.pop("_delete_confirm_check", None)
         st.rerun()
