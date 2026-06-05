@@ -14,24 +14,47 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Ping applications table
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
-          set -e
-          STATUS=$(curl -fsS -o /tmp/body -w "%{http_code}" \
-            "${{ secrets.SUPABASE_URL }}/rest/v1/applications?select=id&limit=1" \
-            -H "apikey: ${{ secrets.SUPABASE_KEY }}" \
-            -H "Authorization: Bearer ${{ secrets.SUPABASE_KEY }}")
+          set -u
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_KEY:-}" ]; then
+            echo "::error::SUPABASE_URL 或 SUPABASE_KEY secret 沒設定"
+            exit 1
+          fi
+          STATUS=$(curl -sS -o /tmp/db_body -w "%{http_code}" \
+            "$SUPABASE_URL/rest/v1/applications?select=id&limit=1" \
+            -H "apikey: $SUPABASE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_KEY") || {
+              echo "::error::curl 連線失敗：$?"
+              exit 1
+            }
           echo "DB ping HTTP $STATUS at $(date -u)"
-          test "$STATUS" = "200"
+          if [ "$STATUS" != "200" ]; then
+            echo "::error::DB ping 沒回 200，response body:"
+            cat /tmp/db_body
+            exit 1
+          fi
 
       - name: Ping storage bucket
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
-          set -e
-          STATUS=$(curl -fsS -o /tmp/body -w "%{http_code}" \
-            "${{ secrets.SUPABASE_URL }}/storage/v1/object/list/dental-uploads" \
-            -X POST \
-            -H "apikey: ${{ secrets.SUPABASE_KEY }}" \
-            -H "Authorization: Bearer ${{ secrets.SUPABASE_KEY }}" \
+          set -u
+          STATUS=$(curl -sS -o /tmp/storage_body -w "%{http_code}" \
+            -X POST "$SUPABASE_URL/storage/v1/object/list/dental-uploads" \
+            -H "apikey: $SUPABASE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_KEY" \
             -H "Content-Type: application/json" \
-            -d '{"limit":1}')
+            -d '{"limit":1,"prefix":""}') || {
+              echo "::error::curl 連線失敗：$?"
+              exit 1
+            }
           echo "Storage ping HTTP $STATUS at $(date -u)"
-          test "$STATUS" = "200"
+          if [ "$STATUS" != "200" ]; then
+            echo "::error::Storage ping 沒回 200，response body:"
+            cat /tmp/storage_body
+            exit 1
+          fi
