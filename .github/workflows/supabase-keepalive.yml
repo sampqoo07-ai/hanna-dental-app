@@ -1,0 +1,37 @@
+name: Supabase keep-alive
+
+# Supabase 免費版專案閒置 7 天就會被自動暫停。
+# 每週一、三、五各 ping 一次（最長間隔 3 天），確保不會被當成閒置。
+# 如果哪天 GitHub Actions 自己壞掉，最多多塞個手動 Resume，資料不會掉。
+
+on:
+  schedule:
+    - cron: "0 9 * * 1,3,5"   # 週一三五 09:00 UTC（台灣 17:00）
+  workflow_dispatch:           # 也可以在 Actions 頁手動觸發測試
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping applications table
+        run: |
+          set -e
+          STATUS=$(curl -fsS -o /tmp/body -w "%{http_code}" \
+            "${{ secrets.SUPABASE_URL }}/rest/v1/applications?select=id&limit=1" \
+            -H "apikey: ${{ secrets.SUPABASE_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_KEY }}")
+          echo "DB ping HTTP $STATUS at $(date -u)"
+          test "$STATUS" = "200"
+
+      - name: Ping storage bucket
+        run: |
+          set -e
+          STATUS=$(curl -fsS -o /tmp/body -w "%{http_code}" \
+            "${{ secrets.SUPABASE_URL }}/storage/v1/object/list/dental-uploads" \
+            -X POST \
+            -H "apikey: ${{ secrets.SUPABASE_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d '{"limit":1}')
+          echo "Storage ping HTTP $STATUS at $(date -u)"
+          test "$STATUS" = "200"
