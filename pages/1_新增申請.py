@@ -88,6 +88,35 @@ if app_id and existing:
 
 st.divider()
 
+# --- Sidebar：寄信模式切換 ---
+with st.sidebar:
+    st.subheader("⚙️ 寄信模式")
+    _is_test = st.toggle(
+        "🧪 測試模式",
+        value=mailer.is_test_mode(),
+        help="開啟後，寄信會導到下面的測試信箱，不會送到公會。給新功能測試／同事熟悉介面用。",
+        key="_mail_test_toggle",
+    )
+    if _is_test:
+        _default_addr = (
+            mailer.active_recipient() if mailer.is_test_mode() else "hoso2np12@gmail.com"
+        )
+        _test_addr = st.text_input(
+            "測試收件人",
+            value=_default_addr,
+            key="_mail_test_input",
+            help="這個信箱會收到所有寄信動作（信件主旨會加 [TEST]）",
+        )
+        mailer.set_test_recipient(_test_addr)
+    else:
+        # 關閉 → 明確強制寄到公會（即使 Cloud Secrets 還有 test_recipient 也會被蓋過）
+        mailer.force_production()
+
+    if mailer.is_test_mode():
+        st.warning(f"目前會寄到\n`{mailer.active_recipient()}`")
+    else:
+        st.success(f"目前會寄到公會\n`{mailer.RECIPIENT}`")
+
 # 顯示上一次儲存／送出後的提示（rerun 之後仍能看到）
 _msg = st.session_state.pop("_saved_msg", None)
 if _msg:

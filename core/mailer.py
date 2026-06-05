@@ -30,13 +30,43 @@ class EmailSendError(Exception):
         self.raw = raw
 
 
-def active_recipient() -> str:
-    """實際會寄到的地址：secrets [smtp].test_recipient 有設就用那個，否則寄公會。"""
+_SESSION_MODE_KEY = "_mailer_mode"          # "prod" / 任意 email 字串 / 未設
+_PROD_SENTINEL = "prod"
+
+
+def _secret_test_recipient() -> str:
+    """從 st.secrets 讀取 test_recipient（沒有就回空字串）。"""
     try:
-        override = st.secrets["smtp"].get("test_recipient")
+        return (st.secrets["smtp"].get("test_recipient") or "").strip()
     except Exception:
-        override = None
-    return (override or "").strip() or RECIPIENT
+        return ""
+
+
+def force_production() -> None:
+    """UI 關閉測試模式時呼叫：明確覆蓋 secrets，本 session 寄到公會。"""
+    st.session_state[_SESSION_MODE_KEY] = _PROD_SENTINEL
+
+
+def set_test_recipient(addr: str | None) -> None:
+    """UI 開啟測試模式時呼叫：本 session 寄到 addr。傳 None/空就回到「跟著 secrets 走」。"""
+    if addr and addr.strip():
+        st.session_state[_SESSION_MODE_KEY] = addr.strip()
+    else:
+        st.session_state.pop(_SESSION_MODE_KEY, None)
+
+
+def active_recipient() -> str:
+    """實際會寄到的地址。優先序：
+       1. session 設定（UI 切換）—— 不管是強制正式還是測試地址
+       2. st.secrets [smtp].test_recipient（後端預設）
+       3. 公會正式信箱 RECIPIENT
+    """
+    mode = st.session_state.get(_SESSION_MODE_KEY)
+    if mode == _PROD_SENTINEL:
+        return RECIPIENT
+    if isinstance(mode, str) and mode.strip():
+        return mode.strip()
+    return _secret_test_recipient() or RECIPIENT
 
 
 def send_application_pdf(case_name: str, pdf_bytes: bytes) -> None:
