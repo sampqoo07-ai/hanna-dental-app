@@ -65,9 +65,14 @@ FIELD_MAP = {
     # 個案表格 row2 (新 y_top=339)
     "id_number":      (135, H - 351, 12),
     "birth_date":     (370, H - 351, 12),
-    # 健康狀況大區塊 (新 label y_top=664，新框比舊大 60%)
-    "health_status":  (145, H - 658, 12),
+    # 健康狀況大區塊（框 top=618.3 / bottom=716.8 / width=408.1）
+    # 起點 y 對齊框內頂端（first baseline ≈ top+14）；字多時走 _fit_text 自動縮字級
+    "health_status":  (147, H - 632, 12),
 }
+
+# 健康狀況框內可用區域（避免寫到框外被裁掉）
+HEALTH_STATUS_MAX_WIDTH = 400   # 框寬 408，保留兩側 padding
+HEALTH_STATUS_MAX_HEIGHT = 80   # 框高 98.5，保留上下 padding 不壓到框邊
 
 # 身份別勾選：新範本 □_y_top=374，5 個□ x0 實測
 IDENTITY_CHECKBOX_X = {
@@ -116,26 +121,75 @@ def _checkmark(c: canvas.Canvas, x: float, y: float, size: int = 10):
     c.restoreState()
 
 
-def _wrap_text(c: canvas.Canvas, text: str, x: float, y: float, max_width: float, size: int):
-    """簡易自動換行（按字寬切）。"""
-    c.setFont(FONT, size)
+def _wrap_lines(text: str, max_width: float, size: int, font: str = FONT) -> list[str]:
+    """把文字按字寬切成多行。"""
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+    lines: list[str] = []
     line = ""
-    cur_y = y
-    line_h = size * 1.3
     for ch in text:
         if ch == "\n":
-            c.drawString(x, cur_y, line)
+            lines.append(line)
             line = ""
-            cur_y -= line_h
             continue
-        if c.stringWidth(line + ch, FONT, size) > max_width:
-            c.drawString(x, cur_y, line)
+        if stringWidth(line + ch, font, size) > max_width:
+            lines.append(line)
             line = ch
-            cur_y -= line_h
         else:
             line += ch
-    if line:
+    lines.append(line)
+    return lines
+
+
+def _wrap_text(c: canvas.Canvas, text: str, x: float, y: float, max_width: float, size: int):
+    """簡易自動換行（按字寬切）。"""
+    line_h = size * 1.3
+    c.setFont(FONT, size)
+    cur_y = y
+    for line in _wrap_lines(text, max_width, size):
         c.drawString(x, cur_y, line)
+        cur_y -= line_h
+
+
+def _fit_text(
+    c: canvas.Canvas,
+    text: str,
+    x: float,
+    y_top: float,
+    max_width: float,
+    max_height: float,
+    base_size: int = 12,
+    min_size: int = 8,
+    line_ratio: float = 1.15,
+):
+    """在固定方框內自動縮字級，把文字塞進 max_width × max_height。
+
+    y_top 是第一行 baseline 的 y 座標（reportlab 由下往上算）。
+    從 base_size 往下試到 min_size；若 min_size 還是塞不下，最後一行尾部加 …。
+    """
+    for size in range(base_size, min_size - 1, -1):
+        lines = _wrap_lines(text, max_width, size)
+        line_h = size * line_ratio
+        if len(lines) * line_h <= max_height:
+            break
+    else:
+        # 連最小字級都塞不下：截斷並加省略號
+        size = min_size
+        line_h = size * line_ratio
+        max_lines = max(1, int(max_height // line_h))
+        lines = _wrap_lines(text, max_width, size)
+        if len(lines) > max_lines:
+            lines = lines[:max_lines]
+            tail = lines[-1]
+            from reportlab.pdfbase.pdfmetrics import stringWidth
+            while tail and stringWidth(tail + "…", FONT, size) > max_width:
+                tail = tail[:-1]
+            lines[-1] = tail + "…"
+
+    c.setFont(FONT, size)
+    cur_y = y_top
+    for line in lines:
+        c.drawString(x, cur_y, line)
+        cur_y -= line_h
 
 
 def _build_overlay(payload: dict) -> bytes:
@@ -149,7 +203,12 @@ def _build_overlay(payload: dict) -> bytes:
         if not val:
             continue
         if key == "health_status":
-            _wrap_text(c, str(val), x, y, max_width=410, size=size)
+            _fit_text(
+                c, str(val), x, y,
+                max_width=HEALTH_STATUS_MAX_WIDTH,
+                max_height=HEALTH_STATUS_MAX_HEIGHT,
+                base_size=size,
+            )
         elif key == "address":
             _wrap_text(c, str(val), x, y, max_width=200, size=size)
         else:
