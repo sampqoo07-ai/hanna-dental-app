@@ -321,12 +321,32 @@ with st.expander("六、附件上傳", expanded=True):
     )
     if uploads:
         st.markdown(f"**已成功上傳到伺服器的附件（{len(uploads)} 個）**")
-        st.caption("這些是已存進雲端 Storage 的檔案，新檔會在這次儲存後追加")
+        st.caption("這些是已存進雲端 Storage 的檔案，新檔會在這次儲存後追加。傳錯地方可以按下方「🗑 刪除」拿掉。")
         _mouth_paths = [u for u in uploads if u.get("kind") == "mouth_photo"]
         _doc_paths = [u for u in uploads if u.get("kind") in ("id_doc", "vpn_doc")]
+
+        def _render_delete_button(u: dict, key_prefix: str) -> None:
+            # 兩階段確認：點一次顯示「確定刪除？」，再點才真的刪
+            confirm_key = f"_confirm_del_{u['path']}"
+            if st.session_state.get(confirm_key):
+                cc1, cc2 = st.columns(2)
+                if cc1.button("✅ 確定刪除", key=f"{key_prefix}_yes_{u['path']}", use_container_width=True):
+                    new_uploads = storage.remove_upload(app_id, u["path"])
+                    _thumb_cached.clear()  # 清縮圖 cache，避免拿到已刪檔
+                    _download_cached.clear()
+                    st.session_state.pop(confirm_key, None)
+                    st.session_state["_saved_msg"] = f"已刪除附件「{u['filename']}」"
+                    st.rerun()
+                if cc2.button("取消", key=f"{key_prefix}_no_{u['path']}", use_container_width=True):
+                    st.session_state.pop(confirm_key, None)
+                    st.rerun()
+            else:
+                if st.button("🗑 刪除", key=f"{key_prefix}_del_{u['path']}", use_container_width=True):
+                    st.session_state[confirm_key] = True
+                    st.rerun()
+
         if _mouth_paths:
             st.caption("口腔照片")
-            # 手機友善：2 欄；桌機看起來照樣 OK
             _cols = st.columns(min(2, len(_mouth_paths)))
             for i, u in enumerate(_mouth_paths):
                 with _cols[i % len(_cols)]:
@@ -338,6 +358,8 @@ with st.expander("六、附件上傳", expanded=True):
                         )
                     except Exception as ex:
                         st.error(f"無法顯示 {u['filename']}：{ex}")
+                    if app_id:
+                        _render_delete_button(u, key_prefix="mouth")
         if _doc_paths:
             st.caption("身份／VPN 文件")
             for u in _doc_paths:
@@ -352,6 +374,8 @@ with st.expander("六、附件上傳", expanded=True):
                         )
                     except Exception as ex:
                         st.error(f"無法顯示 {u['filename']}：{ex}")
+                if app_id:
+                    _render_delete_button(u, key_prefix="doc")
 
 # --- 收集 payload（key 直接對齊 pdf_builder.FIELD_MAP）---
 payload_out = {

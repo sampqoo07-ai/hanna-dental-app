@@ -135,3 +135,20 @@ def download_file(path: str) -> bytes:
 
 def delete_application(app_id: str) -> None:
     _client().table("applications").delete().eq("id", app_id).execute()
+
+
+def remove_upload(app_id: str, path: str) -> list[dict]:
+    """從 Storage 移除單一檔案，並從案件的 uploads 欄位拿掉它。
+
+    回傳更新後的 uploads list。即使 Storage 那頭已經沒檔（手動清過、路徑壞），
+    也照樣把 DB 紀錄拿掉，避免清單一直顯示死連結。
+    """
+    try:
+        _client().storage.from_(_bucket()).remove([path])
+    except Exception:
+        pass
+    row = _client().table("applications").select("uploads").eq("id", app_id).execute()
+    current = (row.data or [{}])[0].get("uploads", []) or []
+    new_uploads = [u for u in current if u.get("path") != path]
+    _client().table("applications").update({"uploads": new_uploads}).eq("id", app_id).execute()
+    return new_uploads
