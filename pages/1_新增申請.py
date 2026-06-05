@@ -147,7 +147,13 @@ def _confirm_email_dialog():
                     + ("　[測試模式]" if mailer.is_test_mode() else "")
                 )
                 st.rerun()
+            except mailer.EmailSendError as e:
+                st.error(f"❌ 寄信失敗：{e.user_message}")
+                st.info(f"💡 建議：{e.hint}")
+                with st.expander("技術細節（給工程除錯用）"):
+                    st.code(f"{type(e.raw).__name__}: {e.raw}", language="text")
             except Exception as e:
+                # 沒被分類到的例外才走原始 traceback，避免吃掉真正未知的 bug
                 st.error(f"寄信失敗：{type(e).__name__}")
                 st.exception(e)
     with c2:
