@@ -309,29 +309,39 @@ def _build_photo_overlay(photos: list[bytes]) -> bytes:
 
 
 def _build_doc_page(filename: str, data: bytes, title: str) -> bytes | None:
-    """把證明文件單張影像（JPG/PNG）做成一頁 PDF。回傳 PDF bytes，或 None（若不是影像）。"""
+    """把證明文件單張影像（JPG/PNG）做成一頁 PDF。回傳 PDF bytes，或 None（若不是影像）。
+
+    不在這層砍像素──直接把原圖高解析度嵌進 PDF，只調整顯示尺寸（pt），
+    這樣 VPN／身障手冊的文字在公會那邊放大看才會清楚。
+    """
     from reportlab.lib.utils import ImageReader
     W = 595
     try:
         img = Image.open(BytesIO(data))
-        img = ImageOps.exif_transpose(img).convert("RGB")  # 依 EXIF 自動轉正
+        img = ImageOps.exif_transpose(img).convert("RGB")
     except Exception:
-        return None  # 不是影像（例如 PDF 檔），交給呼叫方處理
+        return None
     buf = BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
     c.setFont(FONT, 16)
     c.drawCentredString(W / 2, H - 60, title)
     c.setLineWidth(0.8)
     c.line(50, H - 72, W - 50, H - 72)
-    # 文件影像在頁面中置中放大（保比例）
-    max_w, max_h = W - 100, H - 130
-    img.thumbnail((max_w, max_h))
-    x = (W - img.width) / 2
-    y = (H - 100 - img.height) / 2
+
+    # 顯示框（pt）：A4 扣掉上方標題與下方註腳的空間
+    max_w_pt, max_h_pt = W - 100, H - 130
+    # 等比例縮到框內
+    ratio = min(max_w_pt / img.width, max_h_pt / img.height)
+    disp_w = img.width * ratio
+    disp_h = img.height * ratio
+    x = (W - disp_w) / 2
+    y = (H - 100 - disp_h) / 2
+
+    # 保留原始像素，只用 reportlab 的 width/height 控制顯示尺寸
     ibuf = BytesIO()
-    img.save(ibuf, format="JPEG", quality=88)
+    img.save(ibuf, format="JPEG", quality=92)
     ibuf.seek(0)
-    c.drawImage(ImageReader(ibuf), x, y, width=img.width, height=img.height)
+    c.drawImage(ImageReader(ibuf), x, y, width=disp_w, height=disp_h)
     # 檔名小字註腳
     c.setFont(FONT, 8)
     c.drawCentredString(W / 2, 30, filename)

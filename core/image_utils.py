@@ -16,23 +16,33 @@ except ImportError:
     pass
 
 
-MAX_DIM = 1600         # 長邊像素上限
-JPEG_QUALITY = 82      # 對掃描／口腔照足夠清楚，又比原圖小很多
+MAX_DIM = 1600         # 口腔照長邊像素上限
+JPEG_QUALITY = 82      # 對口腔照足夠清楚，又比原圖小很多
+
+# 證明文件（VPN／身障手冊／身分證）走另一組參數：保留文字細節
+DOC_MAX_DIM = 2400     # 文件長邊像素上限：A4 300dpi ≈ 2480px，這裡走 2400 已很清楚
+DOC_JPEG_QUALITY = 92  # 高品質保留文字邊緣
 
 
-def normalize_photo(data: bytes, filename: str) -> tuple[bytes, str]:
-    """讀任意格式（含 HEIC）→ 轉正 → 縮圖 → JPEG bytes。
-
-    回傳 (新 bytes, 新檔名)，副檔名統一成 .jpg。
-    """
+def _normalize(data: bytes, filename: str, max_dim: int, quality: int) -> tuple[bytes, str]:
     img = Image.open(io.BytesIO(data))
     img = ImageOps.exif_transpose(img)
     if img.mode != "RGB":
         img = img.convert("RGB")
-    img.thumbnail((MAX_DIM, MAX_DIM), Image.LANCZOS)
+    img.thumbnail((max_dim, max_dim), Image.LANCZOS)
 
     buf = io.BytesIO()
-    img.save(buf, "JPEG", quality=JPEG_QUALITY, optimize=True)
+    img.save(buf, "JPEG", quality=quality, optimize=True)
 
     base = filename.rsplit(".", 1)[0] if "." in filename else filename
     return buf.getvalue(), f"{base}.jpg"
+
+
+def normalize_photo(data: bytes, filename: str) -> tuple[bytes, str]:
+    """口腔照片用：讀任意格式（含 HEIC）→ 轉正 → 縮到 1600px → JPEG bytes。"""
+    return _normalize(data, filename, MAX_DIM, JPEG_QUALITY)
+
+
+def normalize_document(data: bytes, filename: str) -> tuple[bytes, str]:
+    """證明文件用（VPN／身障手冊／身分證）：縮到 2400px、quality 92，保留文字細節。"""
+    return _normalize(data, filename, DOC_MAX_DIM, DOC_JPEG_QUALITY)

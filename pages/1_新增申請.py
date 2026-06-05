@@ -447,7 +447,8 @@ def _save_uploads(case_id: str) -> list[dict]:
             # PDF 不動，直接上傳
             new_records.append(storage.upload_file(case_id, kind, f.name, f.getvalue()))
         else:
-            data, fname = image_utils.normalize_photo(f.getvalue(), f.name)
+            # 文件用 normalize_document：2400px / quality 92，文字才清楚
+            data, fname = image_utils.normalize_document(f.getvalue(), f.name)
             new_records.append(storage.upload_file(case_id, kind, fname, data))
     return new_records
 
